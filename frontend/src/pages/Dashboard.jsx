@@ -40,7 +40,7 @@ export default function Dashboard() {
   return (
     <div>
       <div className="dashboard-header">
-        <h1>{user ? 'Mis Boards' : 'Boards'}</h1>
+        <h1>Boards</h1>
         {user && <Link to="/board/new" className="btn btn-primary">+ Nuevo Board</Link>}
       </div>
       {error && <div className="alert alert-error">{error}</div>}
@@ -51,22 +51,28 @@ export default function Dashboard() {
         </div>
       ) : (
         <div className="boards-grid">
-          {[...boards].sort((a, b) => (b.running ? 1 : 0) - (a.running ? 1 : 0)).map(board => (
-            <div key={board.id} className="board-card">
-              <h3>{board.name}</h3>
-              <div className="board-meta">
-                <span className="board-id">{board.timers.length} temporizador{board.timers.length !== 1 ? 'es' : ''}</span>
-                {board.timers.length > 0 && (
-                  <span className="board-id">· {formatDuration(totalDuration(board.timers))} total</span>
-                )}
+          {[...boards].sort((a, b) => (b.running ? 1 : 0) - (a.running ? 1 : 0)).map(board => {
+            const canEdit = user && (user.is_admin || board.owner_id === user.id);
+            return (
+              <div key={board.id} className="board-card">
+                <h3>{board.name}</h3>
+                <div className="board-meta">
+                  <span className="board-id">{board.timers.length} temporizador{board.timers.length !== 1 ? 'es' : ''}</span>
+                  {board.timers.length > 0 && (
+                    <span className="board-id">· {formatDuration(totalDuration(board.timers))} total</span>
+                  )}
+                  {board.owner_name && user && board.owner_id !== user.id && (
+                    <span className="board-id">· {board.owner_name}</span>
+                  )}
+                </div>
+                <div className="board-actions">
+                  <Link to={`/b/${board.access_token}`} className="btn btn-sm btn-primary">▶ Ver</Link>
+                  {canEdit && <Link to={`/board/${board.id}/edit`} className="btn btn-sm">✏️ Editar</Link>}
+                  {canEdit && <button onClick={() => deleteBoard(board.id)} className="btn btn-sm btn-danger">🗑️</button>}
+                </div>
               </div>
-              <div className="board-actions">
-                <Link to={`/b/${board.access_token}`} className="btn btn-sm btn-primary">▶ Ver</Link>
-                {user && <Link to={`/board/${board.id}/edit`} className="btn btn-sm">✏️ Editar</Link>}
-                {user && <button onClick={() => deleteBoard(board.id)} className="btn btn-sm btn-danger">🗑️</button>}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

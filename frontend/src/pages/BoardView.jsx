@@ -70,6 +70,11 @@ export default function BoardView() {
   const [tick, setTick] = useState(0);
   const [showQr, setShowQr] = useState(false);
   const [user, setUser] = useState(undefined);
+  const [hasBoardControl, setHasBoardControl] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordLoading, setPasswordLoading] = useState(false);
   const finishedRef = useRef(false);
   const allDoneRef = useRef(false);
   const boardRef = useRef(null);
@@ -231,6 +236,7 @@ export default function BoardView() {
   if (!board) return null;
 
   const isOwnerOrAdmin = user && (user.is_admin || (board.owner_id === user.id));
+  const canControl = isOwnerOrAdmin || hasBoardControl;
   const timers = board.timers || [];
   const totalDuration = timers.reduce((acc, t) => acc + t.duration_seconds, 0);
   const globalElapsed = computeGlobalElapsed(board);
@@ -249,6 +255,11 @@ export default function BoardView() {
             <a href={`/board/${board.id}/edit`} className="btn btn-sm">✏️ Editar</a>
           )}
         </div>
+        {!canControl && board.has_control_password && (
+          <button className="btn btn-sm" onClick={() => { setShowPasswordModal(true); setPasswordInput(''); setPasswordError(''); }} title="Introducir contraseña de control">
+            🔑 Controlar
+          </button>
+        )}
         <button className="btn btn-sm" onClick={() => setShowQr(true)} title="Ver QR">📱 QR</button>
         {wakeLockSupported && (
           <label className="wakelock-switch" title={wakeLockActive ? 'Pantalla siempre activa' : 'Pantalla puede bloquearse'}>
@@ -295,7 +306,7 @@ export default function BoardView() {
       )}
 
       {/* Controls */}
-      {isOwnerOrAdmin && timers.length > 0 && (
+      {canControl && timers.length > 0 && (
         <div className="timer-controls">
           {!board.running ? (
             <button className="btn btn-primary btn-control" onClick={() => control('play')}>▶ Play</button>
@@ -349,7 +360,7 @@ export default function BoardView() {
                       <span className="timer-item-remaining">{formatTime(remaining)}</span>
                     )}
                     {isDone && <span className="timer-item-check">✓</span>}
-                    {isOwnerOrAdmin && !isCurrent && board.running && !isDone && (
+                    {canControl && !isCurrent && board.running && !isDone && (
                       <button
                         className="btn btn-xs"
                         onClick={() => control('goto', index)}
@@ -364,6 +375,42 @@ export default function BoardView() {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Password control modal */}
+      {showPasswordModal && (
+        <div className="modal-overlay" onClick={() => setShowPasswordModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <h2>🔑 Contraseña de control</h2>
+            <p>Introduce la contraseña para tomar el control de este board.</p>
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              setPasswordError('');
+              setPasswordLoading(true);
+              socket.emit('verify-board-password', { boardId: board.id, password: passwordInput }, (res) => {
+                setPasswordLoading(false);
+                if (res?.error) { setPasswordError(res.error); }
+                else { setHasBoardControl(true); setShowPasswordModal(false); }
+              });
+            }}>
+              <input
+                className="input"
+                type="password"
+                placeholder="Contraseña"
+                value={passwordInput}
+                onChange={e => setPasswordInput(e.target.value)}
+                autoFocus
+              />
+              {passwordError && <div className="alert alert-error" style={{ marginTop: '0.5rem' }}>{passwordError}</div>}
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                <button className="btn btn-primary" type="submit" disabled={passwordLoading || !passwordInput}>
+                  {passwordLoading ? 'Verificando...' : 'Acceder'}
+                </button>
+                <button className="btn" type="button" onClick={() => setShowPasswordModal(false)}>Cancelar</button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

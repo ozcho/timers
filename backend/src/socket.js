@@ -1,4 +1,15 @@
 const db = require('./db');
+const crypto = require('crypto');
+
+function verifyControlPassword(password, stored) {
+  try {
+    const [salt, hash] = stored.split(':');
+    const attempt = crypto.scryptSync(password, salt, 32).toString('hex');
+    return crypto.timingSafeEqual(Buffer.from(attempt, 'hex'), Buffer.from(hash, 'hex'));
+  } catch {
+    return false;
+  }
+}
 
 function setupSocket(io, sessionMiddleware) {
   // Share session with socket.io
@@ -22,16 +33,38 @@ function setupSocket(io, sessionMiddleware) {
 
     // Helper: check if user can control a board
     function canControl(board, user) {
-      return user && (user.is_admin || board.owner_id === user.id);
+      if (user && (user.is_admin || board.owner_id === user.id)) return true;
+      const controlled = socket.request.session?.controlledBoards;
+      return Array.isArray(controlled) && controlled.includes(board.id);
     }
 
-    // Broadcast current board state to everyone in the room
+    // Broadcast current board state to everyone in the room (without password hash)
     function broadcastState(boardId) {
       const board = db.prepare('SELECT * FROM boards WHERE id = ?').get(boardId);
       if (!board) return;
       const timers = db.prepare('SELECT * FROM timers WHERE board_id = ? ORDER BY order_index ASC').all(boardId);
-      io.to(boardId).emit('board-state', { ...board, timers });
+      const { control_password, ...safeBoard } = board;
+      io.to(boardId).emit('board-state', { ...safeBoard, has_control_password: !!control_password, timers });
     }
+
+    // Verify board control password via socket (so session is updated in the same object canControl reads)
+    socket.on('verify-board-password', ({ boardId, password }, callback) => {
+      if (typeof callback !== 'function') return;
+      const board = db.prepare('SELECT * FROM boards WHERE id = ?').get(boardId);
+      if (!board) return callback({ error: 'Board no encontrado' });
+      if (!board.control_password) return callback({ error: 'Este board no tiene contraseña de control' });
+      if (!password) return callback({ error: 'Contraseña requerida' });
+      if (!verifyControlPassword(password, board.control_password)) return callback({ error: 'Contraseña incorrecta' });
+
+      if (!socket.request.session.controlledBoards) socket.request.session.controlledBoards = [];
+      if (!socket.request.session.controlledBoards.includes(boardId)) {
+        socket.request.session.controlledBoards.push(boardId);
+      }
+      socket.request.session.save((err) => {
+        if (err) return callback({ error: 'Error guardando sesión' });
+        callback({ ok: true });
+      });
+    });
 
     // Timer control: play / pause / resume / reset / skip / goto
     socket.on('timer-control', ({ boardId, action, index }) => {

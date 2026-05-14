@@ -55,4 +55,11 @@ try {
   // Column already exists
 }
 
+// Migration: add control_password column if missing
+try {
+  db.exec(`ALTER TABLE boards ADD COLUMN control_password TEXT`);
+} catch (e) {
+  // Column already exists
+}
+
 module.exports = db;
